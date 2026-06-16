@@ -1,0 +1,7 @@
+{
+  "name": "Negentropy Terminal",
+  "description": "专为高焦虑、拖延症人群设计的赛博朋克风游戏化人生管理终端，集成 Gemini 3.0 Pro 大脑。",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

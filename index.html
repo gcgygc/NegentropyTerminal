@@ -1,0 +1,148 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Negentropy Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap');
+      
+      :root {
+        --neon-green: #00ff41;
+        --neon-red: #ff003c;
+        --neon-blue: #00f0ff;
+        --neon-yellow: #fcee0a;
+        --bg-dark: #050505;
+        --panel-bg: rgba(10, 20, 15, 0.85);
+      }
+
+      html, body, #root {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background-color: var(--bg-dark);
+        color: #e0e0e0;
+        font-family: 'Share Tech Mono', monospace;
+        overflow: hidden; /* 防止原生滚动，使用应用内滚动 */
+      }
+
+      /* CRT 扫描线效果 */
+      .scanlines {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: linear-gradient(
+          to bottom,
+          rgba(255,255,255,0),
+          rgba(255,255,255,0) 50%,
+          rgba(0,0,0,0.1) 50%,
+          rgba(0,0,0,0.1)
+        );
+        background-size: 100% 4px;
+        pointer-events: none;
+        z-index: 9999;
+        opacity: 0.6;
+      }
+
+      /* 屏幕微光晕影 */
+      .vignette {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,20,10,0.4) 100%);
+        pointer-events: none;
+        z-index: 9998;
+      }
+
+      /* 切角多边形 (Cyberpunk Shape) */
+      .clip-corner {
+        clip-path: polygon(
+          10px 0, 100% 0, 
+          100% calc(100% - 10px), calc(100% - 10px) 100%, 
+          0 100%, 0 10px
+        );
+      }
+      
+      .clip-corner-sm {
+        clip-path: polygon(
+          4px 0, 100% 0, 
+          100% calc(100% - 4px), calc(100% - 4px) 100%, 
+          0 100%, 0 4px
+        );
+      }
+
+      /* 霓虹发光文字 */
+      .neon-text-green { text-shadow: 0 0 5px rgba(0, 255, 65, 0.7), 0 0 10px rgba(0, 255, 65, 0.5); }
+      .neon-text-red { text-shadow: 0 0 5px rgba(255, 0, 60, 0.7), 0 0 10px rgba(255, 0, 60, 0.5); }
+      .neon-text-blue { text-shadow: 0 0 5px rgba(0, 240, 255, 0.7), 0 0 10px rgba(0, 240, 255, 0.5); }
+
+      /* 边框发光 */
+      .neon-border-green { box-shadow: 0 0 8px rgba(0, 255, 65, 0.2), inset 0 0 8px rgba(0, 255, 65, 0.1); }
+
+      /* 故障动画 */
+      .glitch-effect {
+        animation: glitch 2s linear infinite;
+      }
+      @keyframes glitch {
+        2%, 64% { transform: translate(1px,0) skew(0deg); }
+        4%, 60% { transform: translate(-1px,0) skew(0deg); }
+        62% { transform: translate(0,0) skew(1deg); }
+      }
+
+      /* 背景网格移动 */
+      .bg-grid-move {
+        background-size: 40px 40px;
+        background-image: linear-gradient(to right, rgba(0, 255, 65, 0.05) 1px, transparent 1px),
+                          linear-gradient(to bottom, rgba(0, 255, 65, 0.05) 1px, transparent 1px);
+        animation: gridMove 20s linear infinite;
+      }
+      @keyframes gridMove {
+        0% { background-position: 0 0; }
+        100% { background-position: 0 40px; }
+      }
+
+      /* 自定义滚动条 */
+      ::-webkit-scrollbar { width: 4px; }
+      ::-webkit-scrollbar-track { background: #050505; }
+      ::-webkit-scrollbar-thumb { background: #004411; }
+      ::-webkit-scrollbar-thumb:hover { background: #00ff41; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "path": "https://esm.sh/path@^0.12.7",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@capacitor/cli": "https://esm.sh/@capacitor/cli@^7.0.0",
+    "@capacitor/local-notifications": "https://esm.sh/@capacitor/local-notifications@^7.0.0",
+    "@capacitor/core": "https://esm.sh/@capacitor/core@^7.0.0",
+    "@capacitor/filesystem": "https://esm.sh/@capacitor/filesystem@^7.0.0",
+    "@capacitor/share": "https://esm.sh/@capacitor/share@^7.0.0",
+    "@capacitor/app": "https://esm.sh/@capacitor/app@^7.0.0",
+    "url": "https://esm.sh/url@^0.11.4",
+    "process": "https://esm.sh/process@^0.11.10"
+  }
+}
+</script>
+</head>
+  <body>
+    <div class="scanlines"></div>
+    <div class="vignette"></div>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
