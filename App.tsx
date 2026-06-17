@@ -487,6 +487,47 @@ export default function App() {
     }
   };
 
+  // 读取原生后台通知队列，写入收件箱
+  const drainNativePendingNotifications = useCallback(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      const raw = (window as any).NativeNotify?.drainPendingNotifications?.();
+      if (!raw || raw === '[]') return;
+      const pendingList = JSON.parse(raw);
+      if (!Array.isArray(pendingList) || pendingList.length === 0) return;
+
+      setNotificationLogs(prev => {
+        const existingIds = new Set(prev.map(n => n.id));
+        const newEntries: NotificationLog[] = [];
+        for (const item of pendingList) {
+          const entryId = item.id || (Date.now().toString() + Math.random().toString().slice(2, 5));
+          // 去重：如果收件箱中已有相同内容且时间相近的通知，跳过
+          const isDuplicate = prev.some(
+            n => n.content === item.content && Math.abs(n.timestamp - (item.timestamp || 0)) < 5000
+          );
+          if (!isDuplicate && !existingIds.has(entryId)) {
+            existingIds.add(entryId);
+            newEntries.push({
+              id: entryId,
+              timestamp: item.timestamp || Date.now(),
+              title: item.title || '',
+              content: item.content || '',
+              read: false
+            });
+          }
+        }
+        return newEntries.length > 0 ? [...newEntries, ...prev] : prev;
+      });
+    } catch (error) {
+      console.warn('[NOTIF] Failed to drain native pending notifications:', error);
+    }
+  }, []);
+
+  // App 启动时读取后台通知
+  useEffect(() => {
+    drainNativePendingNotifications();
+  }, []);
+
   useEffect(() => {
     refreshBackgroundDiagnosticsLogs();
   }, []);
@@ -1020,6 +1061,8 @@ export default function App() {
             return;
         }
         console.log("【前端强行唤醒】执行后台生理检测...时间：", new Date().toLocaleTimeString());
+        // 读取原生后台期间发送的通知，写入收件箱
+        drainNativePendingNotifications();
         autoCheck();
     };
 

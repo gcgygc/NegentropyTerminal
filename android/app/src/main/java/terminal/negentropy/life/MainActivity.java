@@ -117,6 +117,16 @@ public class MainActivity extends BridgeActivity {
                 }
 
                 @JavascriptInterface
+                public String drainPendingNotifications() {
+                    try {
+                        return KeepAliveService.drainPendingNotifications(appContext);
+                    } catch (Exception error) {
+                        Log.e(TAG, "Failed to drain pending notifications", error);
+                        return "[]";
+                    }
+                }
+
+                @JavascriptInterface
                 public String getPermissionStatus() {
                     try {
                         JSONObject status = new JSONObject();

@@ -4,7 +4,7 @@ import { ChatMessage, PersonaConfig, JournalLog, ChatSession, AIConfig, CustomPr
 import * as GeminiService from '../services/geminiService';
 import MarkdownText from './MarkdownText';
 import { MemoryBankModal } from './MemoryBankModal';
-import { Edit2, RefreshCw, X, Check, BrainCircuit, Square, CheckSquare, MessageSquarePlus, Database, Trash2 } from 'lucide-react';
+import { Edit2, RefreshCw, X, Check, BrainCircuit, Square, CheckSquare, MessageSquarePlus, Database, Trash2, Search, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface ChatInterfaceProps {
   config: PersonaConfig;
@@ -81,6 +81,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set());
   const [manualMemoryContent, setManualMemoryContent] = useState('');
   const [expandedThinkings, setExpandedThinkings] = useState<Set<string>>(new Set());
+  const [deleteConfirm, setDeleteConfirm] = useState<{ ids: string[] } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchActive, setSearchActive] = useState(false);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [highlightMatchId, setHighlightMatchId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ msg: ChatMessage; x: number; y: number } | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTargetRef = useRef<ChatMessage | null>(null);
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
@@ -187,10 +196,89 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   };
   
   const handleDeleteMessage = (messageId: string) => {
-    const updatedMessages = messages.filter(m => m.id !== messageId);
+    setDeleteConfirm({ ids: [messageId] });
+  };
+
+  const confirmDeleteMessage = () => {
+    if (!deleteConfirm) return;
+    const idsToDelete = new Set(deleteConfirm.ids);
+    const updatedMessages = messages.filter(m => !idsToDelete.has(m.id));
     setMessages(updatedMessages);
     saveCurrentMessagesToSession(updatedMessages);
-    showNotification("SYSTEM", "Message deleted.");
+    // 如果删除的包含正在编辑的消息，退出编辑模式
+    if (editingMessageId && idsToDelete.has(editingMessageId)) {
+      setEditingMessageId(null);
+      setEditContent('');
+    }
+    // 退出多选模式
+    if (isSelectionMode) {
+      setIsSelectionMode(false);
+      setSelectedMsgIds(new Set());
+    }
+    showNotification("SYSTEM", `已删除 ${deleteConfirm.ids.length} 条消息。`);
+    setDeleteConfirm(null);
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedMsgIds.size === 0) return;
+    setDeleteConfirm({ ids: Array.from(selectedMsgIds) });
+  };
+
+  // 长按消息操作菜单
+  const startLongPress = (msg: ChatMessage, e: React.TouchEvent | React.MouseEvent) => {
+    if (isSelectionMode) return;
+    cancelLongPress();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    longPressTargetRef.current = msg;
+    longPressTimerRef.current = setTimeout(() => {
+      // 避免菜单超出屏幕
+      const menuWidth = 160;
+      const menuHeight = msg.role === 'model' ? 200 : 160;
+      const x = Math.min(clientX, window.innerWidth - menuWidth - 8);
+      const y = Math.min(clientY, window.innerHeight - menuHeight - 8);
+      setContextMenu({ msg, x: Math.max(8, x), y: Math.max(8, y) });
+    }, 500);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressTargetRef.current = null;
+  };
+
+  const closeContextMenu = () => setContextMenu(null);
+
+  const handleCopyMessage = async (msg: ChatMessage) => {
+    try {
+      await navigator.clipboard.writeText(msg.text);
+      showNotification("SYSTEM", "消息已复制到剪贴板。");
+    } catch {
+      showNotification("SYSTEM", "复制失败，请重试。");
+    }
+    closeContextMenu();
+  };
+
+  const handleContextEdit = (msg: ChatMessage) => {
+    handleStartEdit(msg);
+    closeContextMenu();
+  };
+
+  const handleContextDelete = (msg: ChatMessage) => {
+    handleDeleteMessage(msg.id);
+    closeContextMenu();
+  };
+
+  const handleContextRegenerate = () => {
+    handleRegenerate();
+    closeContextMenu();
+  };
+
+  const handleContextMultiSelect = () => {
+    setIsSelectionMode(true);
+    closeContextMenu();
   };
 
   const handleRegenerate = async () => {
@@ -315,6 +403,46 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   );
   const lastActionableMessageId = actionableMessages[actionableMessages.length - 1]?.id;
 
+  // 搜索逻辑
+  const searchResults = searchQuery.trim()
+    ? messages.filter(m => {
+        if (m.transientType) return false;
+        const text = m.text.toLowerCase();
+        const query = searchQuery.toLowerCase();
+        return text.includes(query) || (m.reasoning && m.reasoning.toLowerCase().includes(query));
+      })
+    : [];
+  const currentMatch = searchResults.length > 0 ? searchResults[Math.min(currentMatchIndex, searchResults.length - 1)] : null;
+
+  const scrollToMatch = (match: ChatMessage) => {
+    setHighlightMatchId(match.id);
+    const el = messageRefs.current.get(match.id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    setTimeout(() => setHighlightMatchId(null), 2000);
+  };
+
+  const goToNextMatch = () => {
+    if (searchResults.length === 0) return;
+    const nextIndex = (currentMatchIndex + 1) % searchResults.length;
+    setCurrentMatchIndex(nextIndex);
+    scrollToMatch(searchResults[nextIndex]);
+  };
+
+  const goToPrevMatch = () => {
+    if (searchResults.length === 0) return;
+    const prevIndex = (currentMatchIndex - 1 + searchResults.length) % searchResults.length;
+    setCurrentMatchIndex(prevIndex);
+    scrollToMatch(searchResults[prevIndex]);
+  };
+
+  const closeSearch = () => {
+    setSearchActive(false);
+    setSearchQuery('');
+    setCurrentMatchIndex(0);
+  };
+
   const headerActionButtonClass = 'h-7 w-7 shrink-0 justify-center rounded-sm border px-0 py-0 text-[10px] transition-all shadow-none sm:h-auto sm:w-auto sm:px-2 sm:py-1.5 sm:rounded';
   const headerLabelClass = 'hidden sm:inline';
   
@@ -428,13 +556,52 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   {isSelectionMode ? <CheckSquare size={11} /> : <Square size={11} />}
                   <span className={headerLabelClass}>{isSelectionMode ? 'SELECTING...' : 'SELECT'}</span>
               </button>
+              <button onClick={() => setSearchActive(true)} className={`${headerActionButtonClass} flex items-center gap-1 transition-all ${searchActive ? 'text-yellow-400 border-yellow-500/80 bg-yellow-900/20' : 'text-gray-400 border-gray-700/80 hover:text-white bg-transparent'}`} title="搜索消息" aria-label="Search messages">
+                  <Search size={11} />
+                  <span className={headerLabelClass}>SEARCH</span>
+              </button>
               <button onClick={handleArchiveAll} disabled={isSummarizing || isSelectionMode} className={`${headerActionButtonClass} ${isSelectionMode ? 'hidden' : 'flex'} items-center gap-1 transition-all text-green-400 border-green-900/50 bg-green-950/10 hover:text-green-300 hover:bg-green-900/15`} title="归档全部记忆" aria-label="Archive chat">
                   {isSummarizing ? <div className="animate-spin w-3 h-3 border-2 border-green-500 border-t-transparent rounded-full"/> : <BrainCircuit size={11}/>}
                   <span className={headerLabelClass}>ARCHIVE</span>
               </button>
           </div>
       </div>
-      
+
+      {/* 搜索栏 */}
+      {searchActive && (
+          <div className="px-4 py-2 border-b border-gray-800 bg-gray-900/80 flex items-center gap-2">
+              <Search size={14} className="text-gray-500 shrink-0" />
+              <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentMatchIndex(0); }}
+                  placeholder="搜索消息内容..."
+                  className="flex-1 bg-transparent text-white text-xs border-none outline-none placeholder-gray-600"
+                  autoFocus
+                  onKeyDown={(e) => {
+                      if (e.key === 'Enter') goToNextMatch();
+                      if (e.key === 'Escape') closeSearch();
+                  }}
+              />
+              {searchQuery.trim() && (
+                  <>
+                      <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                          {currentMatchIndex + 1}/{searchResults.length}
+                      </span>
+                      <button onClick={goToPrevMatch} className="text-gray-400 hover:text-white p-1" title="上一个">
+                          <ChevronUp size={12} />
+                      </button>
+                      <button onClick={goToNextMatch} className="text-gray-400 hover:text-white p-1" title="下一个">
+                          <ChevronDown size={12} />
+                      </button>
+                  </>
+              )}
+              <button onClick={closeSearch} className="text-gray-500 hover:text-white p-1">
+                  <X size={14} />
+              </button>
+          </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
         {messages.map((msg, index) => {
             const isEditing = editingMessageId === msg.id;
@@ -447,7 +614,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             // Fix: Add a delete button to system messages.
             if (msg.text.startsWith('[SYSTEM:') || msg.text.startsWith('【系统提示】')) {
                 return (
-                    <div key={msg.id} className="flex justify-start items-center group">
+                    <div key={msg.id} ref={(el) => { if (el) messageRefs.current.set(msg.id, el); else messageRefs.current.delete(msg.id); }} className="flex justify-start items-center group">
                         <div className="text-blue-500 text-xs animate-pulse font-mono pl-2 py-2">
                             {msg.text}
                         </div>
@@ -506,8 +673,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             };
             const hasThinking = msg.role === 'model' && msg.reasoning && msg.reasoning.trim().length > 0;
 
+            const isSearchHighlighted = searchActive && highlightMatchId === msg.id;
+
             return (
-                <div key={msg.id} onClick={() => toggleMessageSelection(msg.id)} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} group ${isSelectionMode ? 'cursor-pointer' : ''}`}>
+                <div
+                    key={msg.id}
+                    ref={(el) => { if (el) messageRefs.current.set(msg.id, el); else messageRefs.current.delete(msg.id); }}
+                    onClick={() => toggleMessageSelection(msg.id)}
+                    onTouchStart={(e) => startLongPress(msg, e)}
+                    onTouchEnd={cancelLongPress}
+                    onTouchMove={cancelLongPress}
+                    onMouseDown={(e) => startLongPress(msg, e)}
+                    onMouseUp={cancelLongPress}
+                    onMouseLeave={cancelLongPress}
+                    onContextMenu={(e) => { e.preventDefault(); }}
+                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} group ${isSelectionMode ? 'cursor-pointer' : ''} ${isSearchHighlighted ? 'search-highlight-pulse' : ''}`}>
                     {/* 思考过程 (DeepSeek V4 Pro reasoning_content) - 可展开/收起 */}
                     {hasThinking && (
                         <div className="max-w-full mb-1" onClick={(e) => e.stopPropagation()}>
@@ -541,20 +721,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                     </div>
                                 </div>
                             ) : (
-                                <MarkdownText text={msg.text} highlightColor={msg.role === 'user' ? 'text-white' : 'text-blue-400'}/>
+                                <MarkdownText text={msg.text} highlightColor={msg.role === 'user' ? 'text-white' : 'text-blue-400'} highlight={isSearchHighlighted ? searchQuery : undefined} />
                             )}
                         </div>
                     </div>
                     <div className={`text-[10px] text-gray-500/80 mt-1 px-2 font-mono flex items-center gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                         <span>{new Date(msg.timestamp).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                         {!isEditing && !isSelectionMode && !isTransient && (
-                            <div className={`${isLastActionableMessage ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity flex gap-2`}>
-                                <button onClick={() => handleStartEdit(msg)} className="hover:text-blue-400 transition-colors" title="编辑消息"><Edit2 size={10} /></button>
-                                <button onClick={() => handleDeleteMessage(msg.id)} className="hover:text-red-500 transition-colors" title="删除消息"><Trash2 size={10} /></button>
-                                {isLastActionableMessage && msg.role === 'model' && (
-                                    <button onClick={handleRegenerate} className="hover:text-green-400 transition-colors" title="重新生成回复"><RefreshCw size={10} /></button>
-                                )}
-                            </div>
+                            <span className="text-[9px] text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">长按操作</span>
                         )}
                     </div>
                 </div>
@@ -568,6 +742,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
              <div className="flex justify-between items-center h-10 animate-[fadeIn_0.2s]">
                  <span className="text-xs text-yellow-500 font-mono">SELECTED: {selectedMsgIds.size}</span>
                  <div className="flex gap-2">
+                     <button onClick={handleDeleteSelected} disabled={selectedMsgIds.size === 0} className="px-3 py-2 bg-red-900/30 text-red-400 text-xs font-bold border border-red-800 hover:bg-red-900/60 hover:text-red-300 disabled:opacity-30 clip-corner-sm flex items-center gap-1"><Trash2 size={12} /> 删除</button>
                      <button onClick={() => handleArchiveSelected('RAW')} disabled={selectedMsgIds.size === 0 || isSummarizing} className="px-3 py-2 bg-gray-800 text-gray-300 text-xs font-bold border border-gray-600 hover:bg-gray-700 hover:text-white disabled:opacity-50 clip-corner-sm">原样摘录</button>
                      <button onClick={() => handleArchiveSelected('SUMMARIZE')} disabled={selectedMsgIds.size === 0 || isSummarizing} className="px-3 py-2 bg-yellow-900/50 text-yellow-400 text-xs font-bold border border-yellow-700 hover:bg-yellow-800 hover:text-white disabled:opacity-50 clip-corner-sm flex items-center gap-2">{isSummarizing && <div className="animate-spin w-3 h-3 border-2 border-yellow-500 border-t-transparent rounded-full"/>}AI 总结归档</button>
                  </div>
@@ -608,7 +783,91 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
               </div>
           </div>
       )}
-      
+
+      {/* 长按操作菜单 */}
+      {contextMenu && (
+          <div className="fixed inset-0 z-[105]" onClick={closeContextMenu}>
+              <div
+                  className="absolute bg-[#0a0a0a] border border-gray-600 shadow-[0_0_20px_rgba(0,0,0,0.8)] clip-corner-sm py-1 min-w-[140px] z-[106]"
+                  style={{ left: contextMenu.x, top: contextMenu.y }}
+                  onClick={(e) => e.stopPropagation()}
+              >
+                  <button
+                      onClick={() => handleCopyMessage(contextMenu.msg)}
+                      className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-2 transition-colors"
+                  >
+                      <span className="w-4 text-center">📋</span> 复制
+                  </button>
+                  {contextMenu.msg.role === 'user' && (
+                      <button
+                          onClick={() => handleContextEdit(contextMenu.msg)}
+                          className="w-full text-left px-4 py-2.5 text-xs text-blue-400 hover:bg-gray-800 hover:text-blue-300 flex items-center gap-2 transition-colors"
+                      >
+                          <span className="w-4 text-center">✏️</span> 编辑
+                      </button>
+                  )}
+                  {contextMenu.msg.role === 'model' && (
+                      <button
+                          onClick={handleContextRegenerate}
+                          className="w-full text-left px-4 py-2.5 text-xs text-green-400 hover:bg-gray-800 hover:text-green-300 flex items-center gap-2 transition-colors"
+                      >
+                          <span className="w-4 text-center">🔄</span> 重roll
+                      </button>
+                  )}
+                  <div className="border-t border-gray-800 my-1" />
+                  <button
+                      onClick={() => handleContextDelete(contextMenu.msg)}
+                      className="w-full text-left px-4 py-2.5 text-xs text-red-400 hover:bg-gray-800 hover:text-red-300 flex items-center gap-2 transition-colors"
+                  >
+                      <span className="w-4 text-center">🗑</span> 删除
+                  </button>
+                  <button
+                      onClick={handleContextMultiSelect}
+                      className="w-full text-left px-4 py-2.5 text-xs text-yellow-400 hover:bg-gray-800 hover:text-yellow-300 flex items-center gap-2 transition-colors"
+                  >
+                      <span className="w-4 text-center">☑</span> 多选
+                  </button>
+              </div>
+          </div>
+      )}
+
+      {/* 删除确认弹窗 */}
+      {deleteConfirm && (
+          <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="w-full max-w-xs border border-red-800 bg-[#111] p-1 clip-corner shadow-[0_0_30px_rgba(255,0,0,0.2)]">
+                  <div className="bg-gray-900/20 p-5 border border-gray-800 flex flex-col gap-4">
+                      <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-red-900/30 border border-red-700 flex items-center justify-center">
+                              <Trash2 size={18} className="text-red-400" />
+                          </div>
+                          <div>
+                              <h3 className="text-red-300 font-bold text-sm">确认删除</h3>
+                              <p className="text-gray-500 text-xs mt-0.5">
+                                  {deleteConfirm.ids.length === 1
+                                      ? '确定删除这条消息？此操作不可撤销。'
+                                      : `确定删除选中的 ${deleteConfirm.ids.length} 条消息？此操作不可撤销。`}
+                              </p>
+                          </div>
+                      </div>
+                      <div className="flex gap-3 justify-end">
+                          <button
+                              onClick={() => setDeleteConfirm(null)}
+                              className="px-4 py-2 text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 clip-corner-sm transition-colors"
+                          >
+                              取消
+                          </button>
+                          <button
+                              onClick={confirmDeleteMessage}
+                              className="px-4 py-2 text-xs font-bold text-white bg-red-900/50 border border-red-600 hover:bg-red-800 clip-corner-sm transition-colors flex items-center gap-1"
+                          >
+                              <Trash2 size={12} /> 确认删除
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {isMemoryBankOpen && (
           <MemoryBankModal 
             memories={config ? memoryBank : []} 

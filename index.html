@@ -115,6 +115,30 @@
       ::-webkit-scrollbar-track { background: #050505; }
       ::-webkit-scrollbar-thumb { background: #004411; }
       ::-webkit-scrollbar-thumb:hover { background: #00ff41; }
+
+      /* 搜索匹配消息脉冲 */
+      .search-highlight-pulse {
+        animation: searchHighlightPulse 2s ease-out;
+      }
+      @keyframes searchHighlightPulse {
+        0% { background-color: rgba(252, 238, 10, 0.35); box-shadow: 0 0 20px rgba(252, 238, 10, 0.4); }
+        15% { background-color: rgba(252, 238, 10, 0.25); box-shadow: 0 0 12px rgba(252, 238, 10, 0.25); }
+        100% { background-color: transparent; box-shadow: none; }
+      }
+
+      /* 搜索关键词高亮标记 */
+      .search-keyword-highlight {
+        background-color: rgba(252, 238, 10, 0.6);
+        color: #000;
+        padding: 1px 2px;
+        border-radius: 2px;
+        animation: keywordHighlightFade 2s ease-out forwards;
+      }
+      @keyframes keywordHighlightFade {
+        0% { background-color: rgba(252, 238, 10, 0.7); }
+        70% { background-color: rgba(252, 238, 10, 0.7); }
+        100% { background-color: transparent; color: inherit; }
+      }
     </style>
   <script type="importmap">
 {

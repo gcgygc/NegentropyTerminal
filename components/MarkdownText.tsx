@@ -5,9 +5,10 @@ interface MarkdownTextProps {
   text: string;
   className?: string;
   highlightColor?: string;
+  highlight?: string; // 搜索关键词高亮
 }
 
-export const MarkdownText: React.FC<MarkdownTextProps> = ({ text, className = "", highlightColor = "text-green-400" }) => {
+export const MarkdownText: React.FC<MarkdownTextProps> = ({ text, className = "", highlightColor = "text-green-400", highlight }) => {
   if (!text) return null;
 
   const processText = (input: string) => {
@@ -73,12 +74,27 @@ export const MarkdownText: React.FC<MarkdownTextProps> = ({ text, className = ""
     return output;
   };
 
-  return (
-    <div 
-      className={`markdown-content ${className} whitespace-pre-wrap break-words leading-relaxed`}
-      // 启用 HTML 渲染，同时支持上面转换过的 Markdown 标签
-      dangerouslySetInnerHTML={{ __html: processText(text) }}
-    />
+  let html = processText(text);
+
+    // 搜索关键词高亮（在最终 HTML 上做，仅匹配标签外的文本）
+    if (highlight && highlight.trim()) {
+      const escapedKeyword = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // 只替换 >...< 之间的文本内容，避免破坏 HTML 标签
+      html = html.replace(/>([^<]*)</g, (match, textContent) => {
+        if (!textContent) return match;
+        const highlighted = textContent.replace(
+          new RegExp(`(${escapedKeyword})`, 'gi'),
+          '<mark class="search-keyword-highlight">$1</mark>'
+        );
+        return '>' + highlighted + '<';
+      });
+    }
+
+    return (
+      <div
+        className={`markdown-content ${className} whitespace-pre-wrap break-words leading-relaxed`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
   );
 };
 

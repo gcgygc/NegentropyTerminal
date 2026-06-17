@@ -59,6 +59,8 @@ public class KeepAliveService extends Service {
     public static final String KEY_PROACTIVE_LAST_DELIVERED_AT = "proactiveLastDeliveredAt";
     public static final String KEY_PROACTIVE_LAST_ROLL = "proactiveLastRoll";
     public static final String KEY_PROACTIVE_LAST_REASON = "proactiveLastReason";
+    public static final String KEY_PENDING_NOTIFICATIONS = "pending_notifications";
+    private static final int MAX_PENDING_NOTIFICATIONS = 50;
 
     private WifiManager.WifiLock wifiLock;
     private PowerManager.WakeLock wakeLock;
@@ -158,6 +160,51 @@ public class KeepAliveService extends Service {
     public static void clearStoredBackgroundDiagnosticsLog(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         prefs.edit().putString(BACKGROUND_DIAGNOSTICS_LOG_KEY, "[]").apply();
+    }
+
+    /**
+     * 将原生后台通知保存到 SharedPreferences 队列，
+     * 供 JS 端在前台恢复时读取并写入通知收件箱。
+     */
+    private void saveNotificationToPendingQueue(String title, String body) {
+        try {
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            String raw = prefs.getString(KEY_PENDING_NOTIFICATIONS, "[]");
+            JSONArray queue = new JSONArray(raw != null ? raw : "[]");
+
+            JSONObject entry = new JSONObject();
+            entry.put("id", System.currentTimeMillis() + "_" + Math.round(Math.random() * 100000));
+            entry.put("timestamp", System.currentTimeMillis());
+            entry.put("title", title != null ? title : "");
+            entry.put("content", body != null ? body : "");
+
+            // 最新的在前
+            JSONArray next = new JSONArray();
+            next.put(entry);
+            for (int i = 0; i < queue.length() && i < MAX_PENDING_NOTIFICATIONS - 1; i++) {
+                next.put(queue.getJSONObject(i));
+            }
+
+            prefs.edit().putString(KEY_PENDING_NOTIFICATIONS, next.toString()).apply();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to save pending notification", e);
+        }
+    }
+
+    /**
+     * 读取并清空待处理通知队列，返回 JSON 数组字符串。
+     * 由 MainActivity 的 JS 桥接调用。
+     */
+    public static String drainPendingNotifications(Context context) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            String raw = prefs.getString(KEY_PENDING_NOTIFICATIONS, "[]");
+            prefs.edit().putString(KEY_PENDING_NOTIFICATIONS, "[]").apply();
+            return raw != null ? raw : "[]";
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to drain pending notifications", e);
+            return "[]";
+        }
     }
 
     private void appendBackgroundDiagnosticsLog(
@@ -321,6 +368,8 @@ public class KeepAliveService extends Service {
             int id = notificationIdCounter.getAndIncrement();
             manager.notify(id, notification);
             Log.d(TAG, "Notification sent successfully with ID: " + id);
+            // 保存到待处理队列，供 JS 端前台恢复时写入收件箱
+            saveNotificationToPendingQueue(title, cleanBody);
             if (source != null && result != null) {
                 String deliveryStatus = result.usedFallback
                         ? "fallback"
