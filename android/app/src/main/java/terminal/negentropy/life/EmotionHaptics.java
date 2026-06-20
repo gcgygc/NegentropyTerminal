@@ -141,7 +141,8 @@ public final class EmotionHaptics {
 
         String cleanText = text
                 .replaceAll("(?is)\\[HAPTIC_PATTERN\\][\\s\\S]*?\\[/HAPTIC_PATTERN\\]", "")
-                .replaceAll("(?i)\\[HAPTIC:[a-z0-9_-]+\\]", "")
+                .replaceAll("(?i)\\[HAPTIC:[^\\]]*\\]", "")  // 匹配 [HAPTIC:任意内容]，包括中文逗号等
+                .replaceAll("(?i)\\[\\/?HAPTIC_PATTERN\\]", "")
                 .replaceAll("\\n{3,}", "\n\n")
                 .trim();
 

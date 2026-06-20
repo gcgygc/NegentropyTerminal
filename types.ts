@@ -110,13 +110,16 @@ export interface CycleDayLog {
 }
 
 // V4.3 New: Notification Inbox Log
+export type NotificationCategory = 'reminder' | 'proactive' | 'system';
+
 export interface NotificationLog {
   id: string;
   timestamp: number;
   title: string;
   content: string;
-  read: boolean; // Reserved for potential "read but keep" logic, though we delete on read currently
-  isBookmarked?: boolean; // User bookmarked notifications
+  category: NotificationCategory; // reminder=督促指令 / proactive=AI主动关怀 / system=系统消息
+  read: boolean;
+  isBookmarked?: boolean;
 }
 
 

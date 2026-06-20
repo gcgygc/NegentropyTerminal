@@ -976,7 +976,8 @@ export function extractHapticMarkers(text: string): ParsedHapticMarkers {
 
   const cleanText = text
     .replace(HAPTIC_CUSTOM_PATTERN_REGEX, '')
-    .replace(HAPTIC_MARKER_REGEX, '');
+    .replace(/\[HAPTIC:[^\]]*\]/gi, '')        // 兜底：匹配 [HAPTIC:任意内容]，包括中文逗号等
+    .replace(/\[\/?HAPTIC_PATTERN\]/gi, '');   // 兜底：未闭合/孤立的标签
 
   return {
     cleanText: cleanText.replace(/\n{3,}/g, '\n\n').trim(),
@@ -1041,7 +1042,8 @@ export function stripHapticMarkers(text: string): string {
   if (!text) return text;
   return text
     .replace(HAPTIC_CUSTOM_PATTERN_REGEX, '')
-    .replace(HAPTIC_MARKER_REGEX, '')
+    .replace(/\[HAPTIC:[^\]]*\]/gi, '')
+    .replace(/\[\/?HAPTIC_PATTERN\]/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

@@ -487,6 +487,12 @@ export default function App() {
     }
   };
 
+  const sourceToCategory = (src?: string): NotificationLog['category'] => {
+    if (src === 'proactive') return 'proactive';
+    if (src && ['sleep', 'water', 'exercise', 'meal'].includes(src)) return 'reminder';
+    return 'system';
+  };
+
   // 读取原生后台通知队列，写入收件箱
   const drainNativePendingNotifications = useCallback(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -512,6 +518,7 @@ export default function App() {
               timestamp: item.timestamp || Date.now(),
               title: item.title || '',
               content: item.content || '',
+              category: sourceToCategory(item.source),
               read: false
             });
           }
@@ -692,6 +699,7 @@ export default function App() {
     timestamp: Date.now(),
     title,
     content: cleanBody,
+    category: sourceToCategory(options.source),
     read: false
   };
 
@@ -962,7 +970,7 @@ export default function App() {
             console.log("[AI_TRIGGER] 触发睡眠提醒调用...");
             try {
                 const msg = await GeminiService.generateToxicNotification('sleep', persona, aiConfig, prompts, overtimeStr);
-                showNotification(`[${persona.name.split(' ')[0]}] 强制指令`, msg);
+                showNotification(`[${persona.name.split(' ')[0]}] 强制指令`, msg, { source: 'sleep' });
             } catch (e) { console.error(e); }
         }
 
@@ -1017,7 +1025,7 @@ export default function App() {
                  console.log("[AI_TRIGGER] 触发喝水提醒调用...");
                  try {
                      const msg = await GeminiService.generateToxicNotification('water', persona, aiConfig, prompts);
-                     showNotification(`[${persona.name.split(' ')[0]}] 生理警报`, msg);
+                     showNotification(`[${persona.name.split(' ')[0]}] 生理警报`, msg, { source: 'water' });
                  } catch (e) { console.error(e); }
              }
         }
@@ -1034,7 +1042,7 @@ export default function App() {
                 console.log("[AI_TRIGGER] 触发运动提醒调用...");
                 try {
                     const msg = await GeminiService.generateToxicNotification('exercise', persona, aiConfig, prompts);
-                    showNotification(`[${persona.name.split(' ')[0]}] 运动指令`, msg);
+                    showNotification(`[${persona.name.split(' ')[0]}] 运动指令`, msg, { source: 'exercise' });
                 } catch (e) { console.error(e); }
             }
         }
@@ -1045,7 +1053,7 @@ export default function App() {
             console.log("[AI_TRIGGER] 触发进食/能量提醒调用...");
             try {
                 const msg = await GeminiService.generateToxicNotification('food', persona, aiConfig, prompts);
-                showNotification(`[${persona.name.split(' ')[0]}] 能量警报`, msg);
+                showNotification(`[${persona.name.split(' ')[0]}] 能量警报`, msg, { source: 'meal' });
             } catch (e) { console.error(e); }
         }
 

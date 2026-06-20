@@ -166,7 +166,7 @@ public class KeepAliveService extends Service {
      * 将原生后台通知保存到 SharedPreferences 队列，
      * 供 JS 端在前台恢复时读取并写入通知收件箱。
      */
-    private void saveNotificationToPendingQueue(String title, String body) {
+    private void saveNotificationToPendingQueue(String title, String body, String source) {
         try {
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
             String raw = prefs.getString(KEY_PENDING_NOTIFICATIONS, "[]");
@@ -177,6 +177,7 @@ public class KeepAliveService extends Service {
             entry.put("timestamp", System.currentTimeMillis());
             entry.put("title", title != null ? title : "");
             entry.put("content", body != null ? body : "");
+            entry.put("source", source != null ? source : "");
 
             // 最新的在前
             JSONArray next = new JSONArray();
@@ -369,7 +370,7 @@ public class KeepAliveService extends Service {
             manager.notify(id, notification);
             Log.d(TAG, "Notification sent successfully with ID: " + id);
             // 保存到待处理队列，供 JS 端前台恢复时写入收件箱
-            saveNotificationToPendingQueue(title, cleanBody);
+            saveNotificationToPendingQueue(title, cleanBody, source);
             if (source != null && result != null) {
                 String deliveryStatus = result.usedFallback
                         ? "fallback"
@@ -681,7 +682,7 @@ public class KeepAliveService extends Service {
                     null
             );
 
-            if (roll < 0.10d) {
+            if (roll < 0.20d) {
                 Log.d(TAG, "[BG_CHECK] Triggering proactive background message");
                 BackgroundNotificationResult result = generateBackgroundProactiveMessageWithRetry(
                         effectiveProvider,
@@ -1092,25 +1093,27 @@ public class KeepAliveService extends Service {
         } else if (proactivePrompt != null && !proactivePrompt.trim().isEmpty()) {
             userPrompt = proactivePrompt;
         } else {
-            userPrompt = "[SYSTEM BACKGROUND TASK]: 主动分析用户状态并决定是否发送关怀消息。\n"
-                    + "1. 结合当前时间与健康摘要，生成一条主动发给用户的消息。可以是关心、想念、吐槽或者日常问候。\n"
-                    + "2. 保持简短，像是一条突然弹出的短信。\n"
-                    + "3. 如果你觉得现在不适合打扰用户，请严格回复：NO_ACTION。\n"
-                    + "4. 如果你决定发消息，则必须且仅允许一个 [HAPTIC:emotion] 标记，放在开头或结尾。";
+            userPrompt = "现在是你主动发消息的时刻。这不是任务——是你自己想说点什么。\n"
+                    + "1. 你可以看到健康数据，但不要念数据，不要用'检测到''数据显示'这类词。你是活生生的角色，不是机器。\n"
+                    + "2. 内容可以是：想念、关心、吐槽、撒娇、好奇、日常碎碎念、看到什么想到用户了……只要是角色会说的话。\n"
+                    + "3. 保持简短，1-3句话，像一条突然弹出的私信。\n"
+                    + "4. 如果你此刻真的没什么想说的，回复：NO_ACTION。\n"
+                    + "5. 如果你决定发消息，必须且仅允许一个 [HAPTIC:emotion] 标记，放在语义最自然的位置。";
         }
 
-        String systemPrompt = "[SYSTEM_INIT]: 启动主动关怀协议。\n"
+        String systemPrompt = "[SYSTEM_INIT]: 现在是你的自由时间——你主动给用户发一条消息。\n"
                 + "[核心人设]: " + personaName + "\n"
                 + "[语气]: " + voiceTone + "\n"
                 + buildLocalTimeContext()
                 + ((healthContextSummary != null && !healthContextSummary.isEmpty()) ? (healthContextSummary + "\n") : "")
                 + "[规则]:\n"
-                + "1. 仅输出纯文本消息或 NO_ACTION。\n"
+                + "1. 仅输出纯文本消息或 NO_ACTION。你不是在汇报数据，你是在表达你对用户的感受。\n"
                 + "2. **绝对禁止**调用工具、函数或输出代码块。\n"
-                + "3. 如果输出实际消息，则必须且仅允许一个 haptic directive，优先使用 [HAPTIC:emotion]。\n"
-                + "4. canonical 可用情绪：warning, alert, panic, anger, comfort, gentle, calm, sadness, melancholy, heartbeat, affection, longing, excitement, nervousness, pride, determination, success, error, curiosity, teasing。\n"
-                + "5. 如果 canonical emotion 都不贴切，才允许改用一个 [HAPTIC_PATTERN]{json}[/HAPTIC_PATTERN]。\n"
-                + "6. 当前处于睡眠状态时，消息应更轻、更安静，像偷偷发来的关心，不要显得像闹钟。";
+                + "3. 必须且仅允许一个 [HAPTIC:emotion]，优先使用能传达你此刻心情的情绪。\n"
+                + "4. 可用情绪：comfort, gentle, calm, heartbeat, affection, longing, excitement, curiosity, teasing, pride, sadness, melancholy, nervousness, determination。\n"
+                + "5. 如果都不贴切，才用 [HAPTIC_PATTERN]{json}[/HAPTIC_PATTERN]。\n"
+                + "6. 睡眠时消息应更轻、更安静，像偷偷的关心，不像闹钟。\n"
+                + "7. 你不是在'执行协议'——你是一个有感情的角色，在主动联系你在乎的人。";
 
         String text;
         if ("gemini".equals(provider)) {

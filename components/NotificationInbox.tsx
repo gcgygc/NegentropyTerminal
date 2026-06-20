@@ -1,7 +1,31 @@
 
 import React, { useState } from 'react';
-import { NotificationLog } from '../types';
-import { Mail, Trash2, Check, Star } from 'lucide-react';
+import { NotificationLog, NotificationCategory } from '../types';
+import { Mail, Trash2, Check, Star, AlertTriangle, Heart } from 'lucide-react';
+
+const CATEGORY_STYLES: Record<NotificationCategory, { border: string; bg: string; text: string; icon: React.ReactNode; label: string }> = {
+  reminder: {
+    border: 'border-amber-500',
+    bg: 'hover:bg-amber-900/10',
+    text: 'text-amber-500',
+    icon: <AlertTriangle size={10} />,
+    label: 'REMINDER'
+  },
+  proactive: {
+    border: 'border-violet-400',
+    bg: 'hover:bg-violet-900/10',
+    text: 'text-violet-400',
+    icon: <Heart size={10} />,
+    label: 'PROACTIVE'
+  },
+  system: {
+    border: 'border-green-800',
+    bg: 'hover:bg-green-900/10',
+    text: 'text-green-500',
+    icon: <Check size={10} />,
+    label: 'SYSTEM'
+  }
+};
 
 interface NotificationInboxProps {
   notifications: NotificationLog[];
@@ -12,9 +36,16 @@ interface NotificationInboxProps {
 }
 
 const NotificationInbox: React.FC<NotificationInboxProps> = ({ notifications, onClose, onDelete, onClearAll, onToggleBookmark }) => {
-  const [filter, setFilter] = useState<'ALL' | 'BOOKMARKS'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'BOOKMARKS' | NotificationCategory>('ALL');
 
-  const filteredNotifications = notifications.filter(n => filter === 'ALL' || n.isBookmarked);
+  const filteredNotifications = notifications.filter(n => {
+    if (filter === 'ALL') return true;
+    if (filter === 'BOOKMARKS') return n.isBookmarked;
+    return n.category === filter;
+  });
+
+  const reminderCount = notifications.filter(n => n.category === 'reminder').length;
+  const proactiveCount = notifications.filter(n => n.category === 'proactive').length;
 
   const formatNotificationTimestamp = (timestamp: number): string => {
     const value = new Date(timestamp);
@@ -64,14 +95,28 @@ const NotificationInbox: React.FC<NotificationInboxProps> = ({ notifications, on
                     <h3 className="text-green-500 font-bold font-[Orbitron] tracking-widest text-xs sm:text-sm truncate">INBOX</h3>
                 </div>
                 <div className="flex flex-wrap gap-2 text-[10px] font-mono">
-                    <button 
-                        onClick={() => setFilter('ALL')} 
+                    <button
+                        onClick={() => setFilter('ALL')}
                         className={`px-2 py-1 border ${filter === 'ALL' ? 'border-green-500 text-green-400 bg-green-900/20' : 'border-gray-800 text-gray-500 hover:text-green-500'}`}
                     >
                         ALL
                     </button>
-                    <button 
-                        onClick={() => setFilter('BOOKMARKS')} 
+                    <button
+                        onClick={() => setFilter('reminder')}
+                        className={`px-2 py-1 border flex items-center gap-1 ${filter === 'reminder' ? 'border-amber-500 text-amber-400 bg-amber-900/20' : 'border-gray-800 text-gray-500 hover:text-amber-500'}`}
+                    >
+                        <AlertTriangle size={10} />
+                        {reminderCount}
+                    </button>
+                    <button
+                        onClick={() => setFilter('proactive')}
+                        className={`px-2 py-1 border flex items-center gap-1 ${filter === 'proactive' ? 'border-violet-400 text-violet-400 bg-violet-900/20' : 'border-gray-800 text-gray-500 hover:text-violet-400'}`}
+                    >
+                        <Heart size={10} />
+                        {proactiveCount}
+                    </button>
+                    <button
+                        onClick={() => setFilter('BOOKMARKS')}
                         className={`px-2 py-1 border flex items-center gap-1 ${filter === 'BOOKMARKS' ? 'border-yellow-500 text-yellow-400 bg-yellow-900/20' : 'border-gray-800 text-gray-500 hover:text-yellow-500'}`}
                     >
                         <Star size={10} className={filter === 'BOOKMARKS' ? 'fill-yellow-400' : ''} />
@@ -94,10 +139,15 @@ const NotificationInbox: React.FC<NotificationInboxProps> = ({ notifications, on
                 </div>
             )}
             
-            {filteredNotifications.map(notif => (
-                <div key={notif.id} className="relative bg-[#0a0a0a] border-l-2 border-green-800 p-3 group hover:bg-green-900/10 transition-colors">
+            {filteredNotifications.map(notif => {
+                const style = CATEGORY_STYLES[notif.category] || CATEGORY_STYLES.system;
+                return (
+                <div key={notif.id} className={`relative bg-[#0a0a0a] border-l-2 ${style.border} p-3 group ${style.bg} transition-colors`}>
                     <div className="mb-2 flex items-start justify-between gap-2">
-                        <span className="min-w-0 flex-1 text-[10px] text-green-700 font-bold uppercase tracking-wider font-[Orbitron] break-words">{notif.title}</span>
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <span className={`shrink-0 ${style.text}`}>{style.icon}</span>
+                            <span className={`min-w-0 flex-1 text-[10px] ${style.text} font-bold uppercase tracking-wider font-[Orbitron] break-words`}>{notif.title}</span>
+                        </div>
                         <span className="shrink-0 text-[10px] text-gray-600 font-mono">{formatNotificationTimestamp(notif.timestamp)}</span>
                     </div>
                     
@@ -123,7 +173,8 @@ const NotificationInbox: React.FC<NotificationInboxProps> = ({ notifications, on
                         </button>
                     </div>
                 </div>
-            ))}
+                );
+            })}
         </div>
 
         {/* Footer */}
